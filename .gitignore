@@ -1,0 +1,15 @@
+# Entornos virtuales
+.venv/
+venv/
+
+# Archivos compilados de Python
+__pycache__/
+*.pyc
+
+# Datos (Datasets grandes)
+archive/
+
+# Archivos generados (Reportes y gráficos)
+*.pdf
+*.png
+*.log
