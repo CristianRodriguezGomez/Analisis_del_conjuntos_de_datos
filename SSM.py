@@ -1,159 +1,158 @@
+import numpy as np
 import pandas as pd
-import matplotlib.pyplot as plt
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Image, PageBreak
-from reportlab.lib.styles import getSampleStyleSheet
-from reportlab.lib.pagesizes import A4
-import re
-# Funciones auxiliares
-def limpiar_nombre(nombre):
-    # Reemplaza todo lo que no sea letra o número por _
-    return re.sub(r'[^a-zA-Z0-9]', '_', nombre)
+from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, confusion_matrix
+from sklearn.model_selection import train_test_split
+from sklearn.tree import DecisionTreeClassifier
+from sklearn.naive_bayes import CategoricalNB
 
-def guardar_histogramas(df, columnas, prefijo):
-    rutas = []
-    for col in columnas:
-        plt.figure()
-        plt.hist(df[col], bins=5)
-        plt.title(f'Histograma de {col}')
-        plt.xlabel('Valor')
-        plt.ylabel('Frecuencia')
+# 1. CARGA DE DATOS Y CONFIGURACIÓN INICIAL
+print("=== ETAPA A) CARGA DE DATOS ===")
+# Cargamos el archivo original (asegúrate de que esté en la misma carpeta)
+df = pd.read_csv("StressLevelDataset.csv")
 
-        nombre_limpio = limpiar_nombre(col)
-        ruta = f"{prefijo}_{nombre_limpio}.png"
+# Validación física reportada en el EDA
+print(f"Total de registros: {df.shape[0]} | Columnas: {df.shape[1]}")
+print(f"Valores faltantes detectados: {df.isnull().sum().sum()}")
+print(f"Filas duplicadas: {df.duplicated().sum()}\n")
 
-        plt.savefig(ruta, bbox_inches="tight")
-        plt.close()
-        rutas.append(ruta)
+# Definición del Espacio de Estados
+# Variable Objetivo especificada por la profesora: anxiety_level
+X = df.drop(columns=['anxiety_level'])
+y = df['anxiety_level']
 
-    return rutas
-def guardar_histograma_clase(serie, titulo, nombre):
-    plt.figure()
-    serie.value_counts().sort_index().plot(kind="bar")
-    plt.title(titulo)
-    plt.xlabel("Clase")
-    plt.ylabel("Frecuencia")
-    plt.savefig(nombre, bbox_inches="tight")
-    plt.close()
-    return nombre
-
-
-def tabla_descriptiva_a_parrafos(desc, styles):
-    elementos = []
-    for col in desc.columns:
-        texto = f"<b>{col}</b><br/>"
-        for idx in desc.index:
-            texto += f"{idx}: {round(desc[col][idx], 3)}<br/>"
-        elementos.append(Paragraph(texto, styles["Normal"]))
-        elementos.append(Spacer(1, 10))
-    return elementos
-
-# Cargar datasets
-df1 = pd.read_csv("archive/StressLevelDataset.csv")
-df2 = pd.read_csv("archive/Stress_Dataset.csv")
-# Crear PDF
-pdf = SimpleDocTemplate("Analisis_Exploratorio_Ansiedad.pdf", pagesize=A4)
-styles = getSampleStyleSheet()
-contenido = []
-
-# DATASET 1
-contenido.append(Paragraph("Dataset 1: StressLevelDataset", styles["Title"]))
-contenido.append(Spacer(1, 12))
-
-filas, columnas = df1.shape
-contenido.append(Paragraph(f"Número de registros: {filas}", styles["Normal"]))
-contenido.append(Paragraph(f"Número de columnas: {columnas}", styles["Normal"]))
-contenido.append(Spacer(1, 12))
-
-contenido.append(Paragraph("Tipos de datos (todas las variables son numéricas)", styles["Heading2"]))
-contenido.append(Paragraph(str(df1.dtypes), styles["Normal"]))
-contenido.append(Spacer(1, 12))
-
-contenido.append(Paragraph("Estadísticas descriptivas", styles["Heading2"]))
-desc1 = df1.describe()
-contenido.extend(tabla_descriptiva_a_parrafos(desc1, styles))
-
-# Histogramas Dataset 1
-cols1 = df1.columns.drop("stress_level")
-imgs1 = guardar_histogramas(df1, cols1, "ds1")
-img_clase1 = guardar_histograma_clase(
-    df1["stress_level"],
-    "Histograma de clase: Stress Level",
-    "ds1_stress.png"
+# DIVISIÓN DE DATOS (70% Train, 30% Test) ANTES DEL PROCESO
+# Se aplica stratify=y para asegurar proporciones homogéneas de la clase en las particiones
+X_train, X_test, y_train, y_test = train_test_split(
+    X, y, test_size=0.30, random_state=42, stratify=y
 )
 
-contenido.append(PageBreak())
-contenido.append(Paragraph("Histogramas - Dataset 1", styles["Heading2"]))
-contenido.append(Spacer(1, 12))
+print(f"Conjunto de Entrenamiento (Train): {X_train.shape[0]} instancias")
+print(f"Conjunto de Prueba (Test): {X_test.shape[0]} instancias\n")
 
-for img in imgs1 + [img_clase1]:
-    contenido.append(Image(img, width=400, height=300))
-    contenido.append(Spacer(1, 12))
+#PREPROCESAMIENTO Y DISCRETIZACIÓN
+print("=== ETAPA B) PREPROCESAMIENTO (DISCRETIZACIÓN T=3) ===")
 
-contenido.append(PageBreak())
+X_train_disc = X_train.copy()
+X_test_disc = X_test.copy()
 
-# DATASET 2
-contenido.append(Paragraph("Dataset 2: Stress_Dataset", styles["Title"]))
-contenido.append(Spacer(1, 12))
+# Rutina estricta para aprender los intervalos en Train y aplicarlos en Test (Evita Data Leakage)
+for col in X_train.columns:
+    # Determinamos cortes balanceados en 3 intervalos basándonos únicamente en Train
+    # Variables críticas numéricas amplias y métricas se unifican a rango ordinal [1, 2, 3]
+    _, bins_cortes = pd.cut(X_train[col], bins=3, retbins=True, labels=[1, 2, 3])
+    
+    # Aseguramos los límites exteriores para evitar desbordamientos con datos de prueba
+    bins_cortes[0] = -np.inf
+    bins_cortes[-1] = np.inf
+    
+    # Transformamos Train y Test con la misma máscara matemática
+    X_train_disc[col] = pd.cut(X_train[col], bins=bins_cortes, labels=[1, 2, 3]).astype(int)
+    X_test_disc[col] = pd.cut(X_test[col], bins=bins_cortes, labels=[1, 2, 3]).astype(int)
 
-filas, columnas = df2.shape
-contenido.append(Paragraph(f"Número de registros: {filas}", styles["Normal"]))
-contenido.append(Paragraph(f"Número de columnas: {columnas}", styles["Normal"]))
-contenido.append(Spacer(1, 12))
+# Discretizamos también la variable objetivo (Target: Nivel de Ansiedad)
+_, bins_y = pd.cut(y_train, bins=3, retbins=True, labels=[0, 1, 2])
+bins_y[0] = -np.inf
+bins_y[-1] = np.inf
 
-contenido.append(Paragraph("Tipos de datos (numéricos y categóricos)", styles["Heading2"]))
-contenido.append(Paragraph(str(df2.dtypes), styles["Normal"]))
-contenido.append(Spacer(1, 12))
+y_train_disc = pd.cut(y_train, bins=bins_y, labels=[0, 1, 2]).astype(int)
+y_test_disc = pd.cut(y_test, bins=bins_y, labels=[0, 1, 2]).astype(int)
 
-contenido.append(Paragraph("Estadísticas descriptivas (variables numéricas)", styles["Heading2"]))
-desc2 = df2.describe()
-contenido.extend(tabla_descriptiva_a_parrafos(desc2, styles))
+print("Distribución resultante del Target (Anxiety Level) en Entrenamiento:")
+print(y_train_disc.value_counts().sort_index())
+print("¡Preprocesamiento completado de forma segura sin fuga de datos!\n")
 
-# Variable categórica Dataset 2
+#  SELECCIÓN DE CARACTERÍSTICAS
+print("=== ETAPA C) SELECCIÓN DE CARACTERÍSTICAS POR INFORMACIÓN MUTUA ===")
 
-contenido.append(Spacer(1, 12))
-contenido.append(Paragraph(
-    "Descripción de la variable categórica: Which type of stress do you primarily experience?",
-    styles["Heading2"]
-))
+def calcular_informacion_mutua_discreta(X_col, y_target):
+    """
+    Calcula de forma exacta la Información Mutua clásica de Shannon
+    para variables discretas indexadas.
+    """
+    # Tabla de contingencia 
+    tabla_conjunta = pd.crosstab(X_col, y_target, normalize=True).values
+    # Probabilidades marginales
+    prob_x = pd.crosstab(X_col, y_target, normalize=True).sum(axis=1).values
+    prob_y = pd.crosstab(X_col, y_target, normalize=True).sum(axis=0).values
+    
+    mi_score = 0.0
+    for i in range(len(prob_x)):
+        for j in range(len(prob_y)):
+            p_xy = tabla_conjunta[i, j]
+            if p_xy > 0:  # Evitamos indeterminación logarítmica log(0)
+                mi_score += p_xy * np.log2(p_xy / (prob_x[i] * prob_y[j]))
+    return mi_score
 
-frecuencia = df2["Which type of stress do you primarily experience?"].value_counts()
-porcentaje = df2["Which type of stress do you primarily experience?"].value_counts(normalize=True) * 100
-moda = df2["Which type of stress do you primarily experience?"].mode()[0]
+# Calculamos el score informacional para cada variable predictora
+scores_mi = {}
+for col in X_train_disc.columns:
+    scores_mi[col] = calcular_informacion_mutua_discreta(X_train_disc[col], y_train_disc)
 
-texto_cat = "<b>Frecuencia:</b><br/>"
-for idx, val in frecuencia.items():
-    texto_cat += f"{idx}: {val}<br/>"
+# Ordenamos el ranking de mayor a menor impacto discriminante
+ranking_mi = pd.Series(scores_mi).sort_values(ascending=False)
 
-texto_cat += "<br/><b>Porcentaje:</b><br/>"
-for idx, val in porcentaje.items():
-    texto_cat += f"{idx}: {round(val,2)}%<br/>"
+print("Ranking Completo de Información Mutua (Target: Ansiedad):")
+for var, valor in ranking_mi.items():
+    print(f" - {var.ljust(28)}: {valor:.4f}")
 
-texto_cat += f"<br/><b>Moda:</b> {moda}"
+# Extraemos el Top 5 idéntico al consolidado por tu equipo
+top_5_features = list(ranking_mi.head(5).index)
+print(f"\nTop 5 Características Seleccionadas: {top_5_features}\n")
 
-contenido.append(Paragraph(texto_cat, styles["Normal"]))
-contenido.append(Spacer(1, 12))
+# Creamos los subsets de datos con las características óptimas seleccionadas
+X_train_top5 = X_train_disc[top_5_features]
+X_test_top5 = X_test_disc[top_5_features]
 
-# Histogramas Dataset 2
-cols2 = df2.columns.drop("Which type of stress do you primarily experience?")
-imgs2 = guardar_histogramas(df2, cols2, "ds2")
+#  APRENDIZAJE Y EVALUACIÓN
+print("=== ETAPA APRENDIZAJE Y EVALUACIÓN DE MODELOS ===\n")
 
-labels_limpias = df2["Which type of stress do you primarily experience?"].apply(lambda x: x.split()[0])
-img_clase2 = guardar_histograma_clase(
-    labels_limpias,
-    "Histograma de clase: Tipo de Estrés",
-    "ds2_stress.png"
+def evaluar_modelo(modelo, X_tr, X_te, y_tr, y_te, nombre_experimento):
+    # Ajuste/Entrenamiento en el 70%
+    modelo.fit(X_tr, y_tr)
+    # Predicción en el 30% independiente de prueba
+    preds = modelo.predict(X_te)
+    
+    # Cálculo formal de métricas multiclase ponderadas (weighted)
+    acc = accuracy_score(y_te, preds)
+    prec = precision_score(y_te, preds, average='weighted')
+    rec = recall_score(y_te, preds, average='weighted')
+    f1 = f1_score(y_te, preds, average='weighted')
+    cm = confusion_matrix(y_te, preds)
+    
+    print(f"--- RESULTADOS: {nombre_experimento} ---")
+    print(f"Accuracy                 : {acc:.4f}")
+    print(f"Precision (weighted)     : {prec:.4f}")
+    print(f"Recall (weighted)        : {rec:.4f}")
+    print(f"F1-Score (weighted)      : {f1:.4f}")
+    print("Matriz de Confusión:")
+    print(cm)
+    print("-" * 50 + "\n")
+    return acc, prec, rec, f1, cm
+
+# EXPERIMENTO 1: Bayes Ingenuo (Todas las Variables) 
+# Usamos CategoricalNB dado que el espacio de características ha sido discretizado a factores ordinales
+evaluar_modelo(
+    CategoricalNB(), X_train_disc, X_test_disc, y_train_disc, y_test_disc, 
+    "Bayes Ingenuo (Todas las Variables)"
 )
 
-contenido.append(PageBreak())
-contenido.append(Paragraph("Histogramas - Dataset 2", styles["Heading2"]))
-contenido.append(Spacer(1, 12))
+#  EXPERIMENTO 2: Bayes Ingenuo (Top 5 Características)
+evaluar_modelo(
+    CategoricalNB(), X_train_top5, X_test_top5, y_train_disc, y_test_disc, 
+    "Bayes Ingenuo (Top 5 Información Mutua)"
+)
 
-for img in imgs2 + [img_clase2]:
-    contenido.append(Image(img, width=400, height=300))
-    contenido.append(Spacer(1, 12))
+#  EXPERIMENTO 3: Árbol de Decisión (Todas las Variables) 
+# Se fija random_state para reproducibilidad matemática exacta de las ramas
+evaluar_modelo(
+    DecisionTreeClassifier(criterion='entropy', random_state=42), 
+    X_train_disc, X_test_disc, y_train_disc, y_test_disc, 
+    "Árbol de Decisión (Todas las Variables)"
+)
 
-# Generar PDF
-
-pdf.build(contenido)
-
-print("PDF generado correctamente: Analisis_Exploratorio_Ansiedad.pdf")
+#  EXPERIMENTO 4: Árbol de Decisión (Top 5 Características) 
+evaluar_modelo(
+    DecisionTreeClassifier(criterion='entropy', random_state=42), 
+    X_train_top5, X_test_top5, y_train_disc, y_test_disc, 
+    "Árbol de Decisión (Top 5 Información Mutua)"
+)
