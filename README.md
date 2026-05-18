@@ -11,8 +11,40 @@
 * [cite_start]Rodríguez Gómez Cristian [cite: 814, 948]
 
 ---
+## Adquisicion y Configuracion del Dataset WESAD
+
+> **Nota Critica sobre el Volumen de Datos:** Debido a que el dataset WESAD (Wearable Stress and Affect Detection) contiene senales fisiologicas continuas de alta resolucion, su tamano aproximado es de 17.64 GB. Por motivos de almacenamiento y cuotas del repositorio, estos archivos no estan incluidos en el codigo fuente y deben descargarse manualmente.
+
+### Pasos para la Configuracion Local:
+
+1. **Descarga del Dataset:** Obten el archivo comprimido oficial desde la plataforma Kaggle o el servidor de la Universidad de Stuttgart bajo el nombre de Wearable Stress and Affect Detection (WESAD).
+2. **Creacion del Directorio de Almacenamiento:** En la raiz de este proyecto, crea una carpeta llamada obligatoriamente `archive/`.
+3. **Extraccion de Estructuras Binarias (.pkl):**
+   * Descomprime el archivo ZIP descargado dentro de la carpeta `archive/`.
+   * Asegurate de que se conserve la carpeta interna `WESAD/` conteniendo los directorios de cada individuo (S2, S3, ..., S17) con sus respectivos archivos binarios `.pkl` (sincronizados a 700 Hz) y sus cuestionarios `_quest.csv`.
+
+### Estructura de Caminos (Paths) Esperada por los Scripts:
+Los archivos de codigo (`final_wesad.py`, `leer.py`, `encuestas.py`) resolveran las rutas relativas de manera automatica siempre y cuando el arbol de directorios este organizado de la siguiente forma:
+
+```text
+PATRONES-PARCIAL2/
+├── archive/
+│   └── WESAD/
+│       ├── S2/
+│       │   ├── S2.pkl
+│       │   └── S2_quest.csv
+│       ├── S3/
+│       └── ...
+├── final_wesad.py
+├── SSM.py
+├── encuestas.py
+├── StressLevelDataset.csv
+└── leer.py
+
+```
 
 ##  Estructura del Proyecto y Scripts Centrales
+
 
 ### 1. Análisis Tabular y Psicométrico (`StressLevelDataset.csv`)
 * **`SSM.py`**: 
